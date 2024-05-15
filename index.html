@@ -173,17 +173,22 @@
 
         const seconds = Math.floor(remainingMinutes % 60);
 
-        return [hours, minutes, seconds];
+        return [minutes, seconds];
       }
 
-      function getCurrentLyric(hour, minute, second) {
+      function getCurrentLyric(minute, second) {
         if (lyricsJson != null) {
-          return lyricsJson.find(
+          let result = lyricsJson.find(
             (item) =>
-              parseInt(item.hour) == hour &&
               parseInt(item.minute) == minute &&
               parseInt(item.second) == second
           );
+
+          if (result == undefined) {
+            return "";
+          } else {
+            return result.sentence;
+          }
         } else {
           return "";
         }
@@ -268,11 +273,15 @@
         }
 
         if (lyricsJson != null) {
-          let [hour, minute, second] = convertTime(audioVocal.currentTime);
+          let [minute, second] = convertTime(audioVocal.currentTime);
+          let currentLyricResult = getCurrentLyric(minute, second);
           currentLyric =
-            getCurrentLyric(hour, minute, second) != ""
-              ? getCurrentLyric(hour, minute, second)
-              : currentLyric;
+            currentLyricResult != ""
+              ? currentLyricResult
+              : currentLyric != ""
+              ? currentLyric
+              : "";
+          console.log(minute, second, currentLyric);
           let currentWordIndex = 0;
           let fontHeight = 30;
           let lyricsPaddingLeft = 50;
@@ -318,13 +327,13 @@
           }
         } else {
           if (audioBackground.paused) {
-            audioBackground.play();
             audioVocal.play();
+            audioBackground.play();
             document.getElementById("play").classList.add("hidden");
             document.getElementById("pause").classList.remove("hidden");
           } else {
-            audioBackground.pause();
             audioVocal.pause();
+            audioBackground.pause();
             document.getElementById("play").classList.remove("hidden");
             document.getElementById("pause").classList.add("hidden");
           }
@@ -533,8 +542,6 @@
 
       function parseProcessedAudio(data) {
         try {
-          doneProcessing = true;
-
           let isSyncedLyrics = data["isSyncedLyrics"];
           let lyrics = data["lyrics"];
           let vocalUrl = data["vocalTrackUrl"];
@@ -542,7 +549,7 @@
 
           if (lyrics != undefined || lyrics.length > 0) {
             console.log("LYRICS IS:\n", lyrics);
-            for (let line of lyrics.split("\n")) {
+            for (let line of lyrics.trim().split("\\n")) {
               let pTag = document.createElement("p");
               pTag.classList.add("my-3");
               //console.log(line)
@@ -557,6 +564,9 @@
           }
           audioBackground.src = backgroundUrl != null ? backgroundUrl : "";
           audioVocal.src = vocalUrl != null ? vocalUrl : "";
+          if (!audioElement.paused) {
+            musicControl.click();
+          }
           source1 = audioContext.createMediaElementSource(audioBackground);
           source2 = audioContext.createMediaElementSource(audioVocal);
           source1.connect(analyser);
@@ -567,16 +577,16 @@
           sessionStorage.setItem("lyrics", lyrics);
           //TODO: Persist state on browser refresh
 
-          audioAvailable = true;
+          setTimeout(() => {
+            musicControl.classList.remove("cursor-not-allowed");
+            musicControl.classList.add("cursor-pointer");
 
-          if (!audioElement.paused) {
+            musicControl.classList.remove("*:opacity-20");
             musicControl.click();
-          }
-          musicControl.classList.remove("cursor-not-allowed");
-          musicControl.classList.add("cursor-pointer");
+          }, 2000);
 
-          musicControl.classList.remove("*:opacity-20");
-          musicControl.click();
+          audioAvailable = true;
+          doneProcessing = true;
           //updates.close();
           //console.log("CLOSING SSE UPDATES FROM SERVER")
         } catch (e) {
@@ -590,7 +600,7 @@
       }
       function parseSyncedLyrics(lyrics) {
         let result = [];
-        let lyricLines = lyrics.split("\n");
+        let lyricLines = lyrics.trim().split("\\n");
 
         for (line of lyricLines) {
           let splitWhiteSpace = line.split(" ");
@@ -598,14 +608,13 @@
             splitWhiteSpace[0],
             splitWhiteSpace.slice(1, splitWhiteSpace.length).join(" "),
           ];
-          let [hour, minuteAndSecond] = timeStamp
+          let [minute, secondsEx] = timeStamp
             .replace('"', "")
             .slice(1, timeStamp.length - 2)
             .split(":");
-          let [minute, second] = minuteAndSecond.split(".");
+          let [second, _] = secondsEx.split(".");
 
           result.push({
-            hour: hour,
             minute: minute,
             second: second,
             sentence: sentence,
