@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/public/styles.css" />
+    <title>Karaokey | Sing Along And Vibe To Your Favourite Songs</title>
+  </head>
+  <body class="bg-[#202020] flex flex-col items-center py-10">
+    <audio id="audioFile" crossorigin="anonymous"></audio>
+    <audio id="audioVocal" crossorigin="anonymous"></audio>
+    <audio id="audioBackground" crossorigin="anonymous"></audio>
+    <h1 class="text-white bg-black p-2 mb-3 text-center">
+      Song will play while the server processes the audio
+    </h1>
+    <div class="border-[3px] border-[#00ff00] rounded-sm" id="canvasContainer">
+      <canvas id="canvasElement"></canvas>
+      <!--TODO add file drag and drop feature-->
+    </div>
+    <div
+      class="bg-[#252525] border border-[#00ff00] w-[90%] h-[60px] m-9 px-5 rounded-sm flex justify-between items-center"
+    >
+      <label
+        for="audioFile"
+        class="text-sm font-semibold text-[#00ff00] underline cursor-pointer"
+        id="uploadFile"
+      >
+        Upload Audio File
+      </label>
+      <div
+        class="bg-black w-fit h-fit p-4 border-2 border-[#00ff00] rounded-full cursor-not-allowed *:opacity-20"
+        id="musicControl"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          height="50px"
+          viewBox="0 -960 960 960"
+          width="50px"
+          fill="#00ff00"
+          id="play"
+        >
+          <path
+            d="M320-200v-560l440 280-440 280Zm80-280Zm0 134 210-134-210-134v268Z"
+          />
+        </svg>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          height="50px"
+          viewBox="0 -960 960 960"
+          width="50px"
+          fill="#00ff00"
+          id="pause"
+          class="hidden"
+        >
+          <path
+            d="M520-200v-560h240v560H520Zm-320 0v-560h240v560H200Zm400-80h80v-400h-80v400Zm-320 0h80v-400h-80v400Zm0-400v400-400Zm320 0v400-400Z"
+          />
+        </svg>
+      </div>
+      <div
+        class="text-sm font-semibold text-[#00ff00] underline cursor-pointer"
+        id="enterSpotifyLink"
+      >
+        Input Spotify Song Url
+      </div>
+    </div>
+
+    <input
+      type="file"
+      name="audioFileUpload"
+      id="audioFileUpload"
+      class="hidden"
+      accept=".wav, .mp3"
+    />
+    <dialog
+      class="top-0 left-0 right-0 mt-10 w-[60%] max-w-[500px] h-fit bg-black border-[3px] border-[#ffff00] rounded-md p-3"
+      id="spotifyForm"
+    >
+      <p class="text-[10px] text-[#00ff00] font-semibold">
+        Enter Link To Spotify Song
+      </p>
+      <form class="w-full flex flex-col items-end">
+        <input
+          id="spotifyUrl"
+          name="spotifyUrl"
+          type="text"
+          class="w-full h-[50px] text-base font-semibold italic text-black p-3 rounded-sm"
+          placeholder="https://open.spotify.com/track/40yFmXrjfkv51FEQ0ULf1N?si=dfc295302edd4d60"
+        />
+        <button
+          class="mt-3 w-fit text-sm font-semibold underline text-[#00ff00]"
+          id="sendSpotifyUrl"
+          formmethod="dialog"
+          value=""
+        >
+          submit
+        </button>
+      </form>
+    </dialog>
+    <div
+      class="hidden justify-between m-2 w-[90%] *:text-[#00ff00] *:text-[12px] *:font-medium *:underline *:cursor-pointer"
+      id="processedAudioControls"
+    >
+      <span id="playVocals">toggle vocal track play</span
+      ><span id="toggleLyrics">toggle lyrics view</span>
+    </div>
+    <div
+      class="w-[90%] max-h-[300px] h-fit overflow-scroll *:text-[#ffff00] *:text-sm *:text-semibold rounded-sm border border-[#00ff00]"
+    >
+      <span class="text-white mb-3">Full Lyrics</span>
+      <div
+        id="lyrics"
+        class="bg-black text-sm text-[#00ff00] font-semibold font-mono"
+      ></div>
+    </div>
+    <div
+      class="border border-[#00ff00] p-2 w-fit h-fit mt-4 hidden"
+      id="serverLogsContainer"
+    >
+      <span class="text-sm text-[#ffff00] font-semibold mb-3"
+        >server logs/updates will appear here: try not to reload the browser
+        mid-session</span
+      >
+      <code
+        id="serverLogs"
+        class="text-sm text-[#00ff00] m-4 rounded-sm w-[80%] max-h-[300px] overflow-scroll"
+      >
+      </code>
+    </div>
+    <script>
+      const enterSpotifyLink = document.getElementById("enterSpotifyLink");
+      const uploadFile = document.getElementById("uploadFile");
+      const audioFileUpload = document.getElementById("audioFileUpload");
+      const canvasBg = "#000";
+      const canvasFg = "#00ff00";
+      const canvasContainer = document.getElementById("canvasContainer");
+      const canvas = document.getElementById("canvasElement");
+      const musicControl = document.getElementById("musicControl");
+      const audioElement = document.getElementById("audioFile");
+      const audioVocal = document.getElementById("audioVocal");
+      const audioBackground = document.getElementById("audioBackground");
+      const sendSpotifyUrl = document.getElementById("sendSpotifyUrl");
+      const spotifyForm = document.getElementById("spotifyForm");
+      const spotifyUrl = document.getElementById("spotifyUrl");
+
+      let audioAvailable = false;
+
+      const analyserWidth = (4.5 * window.innerWidth) / 5;
+      const analyserHeight = window.innerHeight / 2;
+      const analyserPadding =
+        analyserWidth >= 900 ? analyserWidth / 5 : analyserWidth / 20;
+
+      canvas.width = analyserWidth;
+      canvas.height = analyserHeight;
+
+      let showLyrics = true;
+      let playVocals = false;
+      audioVocal.volume = 0;
+      let doneProcessing = false;
+      let updates;
+      let lyricsJson;
+      let currentLyric = "";
+
+      const canvasCtx = canvas.getContext("2d");
+      canvasCtx.fillStyle = canvasBg;
+      canvasCtx.fillRect(0, 0, analyserWidth, analyserHeight);
+      function convertTime(currentTime) {
+        const hours = Math.floor(currentTime / 3600);
+
+        const remainingMinutes = currentTime % 3600;
+
+        const minutes = Math.floor(remainingMinutes / 60);
+
+        const seconds = Math.floor(remainingMinutes % 60);
+
+        return [hours, minutes, seconds];
+      }
+
+      function getCurrentLyric(hour, minute, second) {
+        if (lyricsJson != null) {
+          return lyricsJson.find(
+            (item) =>
+              parseInt(item.hour) == hour &&
+              parseInt(item.minute) == minute &&
+              parseInt(item.second) == second
+          );
+        } else {
+          return "";
+        }
+      }
+
+      function fftShift(frequencyDataArray) {
+        if (frequencyDataArray.length % 2 == 0) {
+          const firstHalf = frequencyDataArray.slice(
+            0,
+            frequencyDataArray.length / 2
+          );
+          const secondHalf = frequencyDataArray.slice(
+            frequencyDataArray.length / 2,
+            frequencyDataArray.length
+          );
+          return [...secondHalf.reverse(), ...firstHalf];
+        } else {
+          const firstHalf = frequencyDataArray.slice(
+            0,
+            (frequencyDataArray.length - 1) / 2
+          );
+          const secondHalf = frequencyDataArray.slice(
+            (frequencyDataArray.length - 1) / 2 + 1,
+            frequencyDataArray.length
+          );
+          return [
+            ...secondHalf.reverse(),
+            frequencyDataArray[(frequencyDataArray.length - 1) / 2],
+            ...firstHalf,
+          ];
+        }
+      }
+
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      let source1 = audioContext.createMediaElementSource(audioElement);
+      let source2;
+      source1.connect(analyser);
+      analyser.connect(audioContext.destination);
+      analyser.fftSize = 128;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      function drawAnalyser() {
+        canvasCtx.clearRect(0, 0, analyserWidth, analyserHeight);
+        canvasCtx.fillStyle = canvasBg;
+        canvasCtx.fillRect(0, 0, analyserWidth, analyserHeight);
+
+        if (!doneProcessing) {
+          if (!audioElement.paused) {
+            analyser.getByteFrequencyData(dataArray);
+          }
+        } else {
+          if (!audioBackground.paused) {
+            analyser.getByteFrequencyData(dataArray);
+          }
+        }
+
+        const barWidth =
+          (analyserWidth - analyserPadding * 2) /
+            dataArray.filter((amplitude) => amplitude > 0).length -
+          10;
+        const frequencySpacing =
+          (analyserWidth -
+            analyserPadding * 2 -
+            barWidth * dataArray.filter((amplitude) => amplitude > 0).length) /
+          dataArray.filter((amplitude) => amplitude > 0).length;
+
+        let x = analyserPadding;
+        for (let i = 0; i < bufferLength; i++) {
+          let barHeight = fftShift(dataArray)[i] / 2;
+          if (barHeight > 0) {
+            canvasCtx.fillStyle = canvasFg;
+            canvasCtx.fillRect(
+              x,
+              (3 * analyserHeight) / 4 - barHeight,
+              barWidth,
+              barHeight
+            );
+            x += barWidth + frequencySpacing;
+          }
+        }
+
+        if (lyricsJson != null) {
+          let [hour, minute, second] = convertTime(audioVocal.currentTime);
+          currentLyric =
+            getCurrentLyric(hour, minute, second) != ""
+              ? getCurrentLyric(hour, minute, second)
+              : currentLyric;
+          let currentWordIndex = 0;
+          let fontHeight = 30;
+          let lyricsPaddingLeft = 50;
+          let lyricsPaddingBottom = 20;
+          canvasCtx.font = `${fontHeight}px bold Helvetica`;
+          canvasCtx.fillStyle = "white";
+          canvasCtx.fillText(
+            currentLyric,
+            lyricsPaddingLeft,
+            analyserHeight - lyricsPaddingBottom
+          );
+
+          /*let boundingRect = canvasCtx.measureText(
+                  currentLyric.split(" ")[currentWordIndex]
+                );
+                let marginWidth = canvasCtx.measureText(
+                  currentLyric.split(" ").slice(0, currentWordIndex).join(" ")
+                ).width;
+                canvasCtx.fillStyle = "red";
+                canvasCtx.fillRect(
+                  lyricsPaddingLeft +
+                    marginWidth +
+                    (currentWordIndex != 0 ? canvasCtx.measureText(" ").width : 0),
+                  analyserHeight - lyricsPaddingBottom - fontHeight + 3,
+                  boundingRect.width,
+                  fontHeight + 4
+                );*/
+        }
+
+        requestAnimationFrame(drawAnalyser);
+      }
+
+      function controlMusicPlayBack() {
+        if (!doneProcessing) {
+          if (audioElement.paused) {
+            audioElement.play();
+            document.getElementById("play").classList.add("hidden");
+            document.getElementById("pause").classList.remove("hidden");
+          } else {
+            audioElement.pause();
+            document.getElementById("play").classList.remove("hidden");
+            document.getElementById("pause").classList.add("hidden");
+          }
+        } else {
+          if (audioBackground.paused) {
+            audioBackground.play();
+            audioVocal.play();
+            document.getElementById("play").classList.add("hidden");
+            document.getElementById("pause").classList.remove("hidden");
+          } else {
+            audioBackground.pause();
+            audioVocal.pause();
+            document.getElementById("play").classList.remove("hidden");
+            document.getElementById("pause").classList.add("hidden");
+          }
+        }
+      }
+
+      document.addEventListener("keypress", (ev) => {
+        if (ev.code == "Space" && audioAvailable) {
+          drawAnalyser();
+          controlMusicPlayBack();
+        }
+      });
+      musicControl.addEventListener("click", () => {
+        if (audioAvailable) {
+          drawAnalyser();
+          controlMusicPlayBack();
+        }
+      });
+      audioElement.addEventListener("ended", () => {
+        document.getElementById("play").classList.remove("hidden");
+        document.getElementById("pause").classList.add("hidden");
+      });
+      audioBackground.addEventListener("ended", () => {
+        document.getElementById("play").classList.remove("hidden");
+        document.getElementById("pause").classList.add("hidden");
+      });
+      audioVocal.addEventListener("ended", () => {
+        document.getElementById("play").classList.remove("hidden");
+        document.getElementById("pause").classList.add("hidden");
+      });
+
+      enterSpotifyLink.addEventListener("click", () => {
+        spotifyForm.showModal();
+      });
+      uploadFile.addEventListener("click", () => {
+        audioFileUpload.click();
+      });
+
+      audioFileUpload.addEventListener("change", async (ev) => {
+        const uploadedFile = ev.target.files[0];
+        audioElement.src = URL.createObjectURL(uploadedFile);
+        source1 = audioContext.createMediaElementSource(audioElement);
+        source2 = undefined;
+        doneProcessing = false;
+        musicControl.classList.remove("cursor-not-allowed");
+        musicControl.classList.add("cursor-pointer");
+
+        musicControl.classList.remove("*:opacity-20");
+        audioAvailable = true;
+        musicControl.click();
+
+        const formData = new FormData();
+        formData.append("song", uploadedFile);
+
+        const fileReader = new FileReader();
+        fileReader.onload = async () => {
+          const arrayBuffer = fileReader.result;
+
+          const fileHash = await sha1File(arrayBuffer);
+          //console.log(fileHash);
+          // sessionStorage.setItem("songId", fileHash);
+          if (typeof EventSource !== "undefined") {
+            updates = new EventSource(`/update/${fileHash}`);
+            /*updates.onerror = () => {
+              console.log("UPDATES from server encountered an error");
+            };**/
+            document
+              .getElementById("serverLogsContainer")
+              .classList.remove("hidden");
+            updates.onmessage = (event) => {
+              console.log("new msg");
+              let update = JSON.parse(event.data);
+              let logs = document.createElement("span");
+              for (let log of update) {
+                let pTag = document.createElement("p");
+                pTag.classList.add(
+                  "border-y",
+                  "border-y-white",
+                  "my-2",
+                  "py-2",
+                  "flex",
+                  "border-dashed"
+                );
+                pTag.innerText = log;
+                logs.appendChild(pTag);
+              }
+
+              document.getElementById("serverLogs").innerHTML = "";
+              document.getElementById("serverLogs").appendChild(logs);
+            };
+          }
+        };
+        fileReader.readAsArrayBuffer(uploadedFile);
+
+        const result = await fetch("/uploadAudio", {
+          method: "POST",
+          body: formData,
+        }).then((res) => {
+          return res.json();
+        });
+        document
+          .getElementById("processedAudioControls")
+          .classList.remove("hidden");
+        document.getElementById("processedAudioControls").classList.add("flex");
+        parseProcessedAudio(result);
+      });
+
+      async function sha1File(fileData) {
+        const data = new Uint8Array(fileData);
+
+        const hashBuffer = await crypto.subtle.digest("SHA-1", data);
+
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("");
+
+        return hashHex;
+      }
+      async function sha1(str) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(str);
+
+        const hashBuffer = await crypto.subtle.digest("SHA-1", data);
+
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("");
+
+        return hashHex;
+      }
+
+      sendSpotifyUrl.addEventListener("click", async () => {
+        if (spotifyUrl.value.trim().length > 0) {
+          if (typeof EventSource !== "undefined") {
+            const id = await sha1(spotifyUrl.value);
+            // sessionStorage.setItem("songId", id);
+            updates = new EventSource(`/update/${id}`);
+            /*updates.onerror = () => {
+              console.log("UPDATES from server encountered an error");
+            };**/
+            document
+              .getElementById("serverLogsContainer")
+              .classList.remove("hidden");
+            updates.onmessage = (event) => {
+              let update = JSON.parse(event.data);
+
+              let logs = document.createElement("span");
+              for (let log of update) {
+                let pTag = document.createElement("p");
+                pTag.classList.add(
+                  "border-y",
+                  "border-y-white",
+                  "my-2",
+                  "py-2",
+                  "flex",
+                  "border-dashed"
+                );
+                pTag.innerText = log;
+                logs.appendChild(pTag);
+              }
+
+              document.getElementById("serverLogs").innerHTML = "";
+              document.getElementById("serverLogs").appendChild(logs);
+            };
+          }
+
+          let result = await fetch("/spotifySong", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ songUrl: spotifyUrl.value }),
+          }).then((res) => {
+            return res.json();
+          });
+          document
+            .getElementById("processedAudioControls")
+            .classList.remove("hidden");
+          document
+            .getElementById("processedAudioControls")
+            .classList.add("flex");
+          parseProcessedAudio(result);
+        }
+      });
+
+      document.getElementById("playVocals").addEventListener("click", () => {
+        playVocals = !playVocals;
+        if (playVocals) {
+          audioVocal.volume = 1;
+        } else {
+          audioVocal.volume = 0;
+        }
+        console.log("Normal: ", audioElement.volume);
+        console.log("Background: ", audioBackground.volume);
+        console.log("Vocal: ", audioVocal.volume);
+      });
+
+      document.getElementById("toggleLyrics").addEventListener("click", () => {
+        showLyrics = !showLyrics;
+        if (showLyrics) {
+          document.getElementById("lyrics").classList.remove("hidden");
+        } else {
+          document.getElementById("lyrics").classList.add("hidden");
+        }
+      });
+
+      function parseProcessedAudio(data) {
+        try {
+          doneProcessing = true;
+
+          let isSyncedLyrics = data["isSyncedLyrics"];
+          let lyrics = data["lyrics"];
+          let vocalUrl = data["vocalTrackUrl"];
+          let backgroundUrl = data["backgroundTrackUrl"];
+
+          if (lyrics != undefined || lyrics.length > 0) {
+            console.log("LYRICS IS:\n", lyrics);
+            for (let line of lyrics.split("\n")) {
+              let pTag = document.createElement("p");
+              pTag.classList.add("my-3");
+              //console.log(line)
+              pTag.innerText = line;
+              document.getElementById("lyrics").appendChild(pTag);
+            }
+            if (isSyncedLyrics) {
+              lyricsJson = parseSyncedLyrics(lyrics);
+            }
+          } else {
+            document.getElementById("lyrics").innerHTML = "NO LYRICS FOUND";
+          }
+          audioBackground.src = backgroundUrl != null ? backgroundUrl : "";
+          audioVocal.src = vocalUrl != null ? vocalUrl : "";
+          source1 = audioContext.createMediaElementSource(audioBackground);
+          source2 = audioContext.createMediaElementSource(audioVocal);
+          source1.connect(analyser);
+          source2.connect(analyser);
+
+          sessionStorage.setItem("backgroundUrl", audioBackground.src);
+          sessionStorage.setItem("vocalUrl", audioVocal.src);
+          sessionStorage.setItem("lyrics", lyrics);
+          //TODO: Persist state on browser refresh
+
+          audioAvailable = true;
+
+          if (!audioElement.paused) {
+            musicControl.click();
+          }
+          musicControl.classList.remove("cursor-not-allowed");
+          musicControl.classList.add("cursor-pointer");
+
+          musicControl.classList.remove("*:opacity-20");
+          musicControl.click();
+          //updates.close();
+          //console.log("CLOSING SSE UPDATES FROM SERVER")
+        } catch (e) {
+          //updates.close();
+          //console.log("CLOSING SSE UPDATES FROM SERVER")
+          console.log(
+            "ERROR occured while parsing processed files from server: \n",
+            e.message
+          );
+        }
+      }
+      function parseSyncedLyrics(lyrics) {
+        let result = [];
+        let lyricLines = lyrics.split("\n");
+
+        for (line of lyricLines) {
+          let splitWhiteSpace = line.split(" ");
+          let [timeStamp, sentence] = [
+            splitWhiteSpace[0],
+            splitWhiteSpace.slice(1, splitWhiteSpace.length).join(" "),
+          ];
+          let [hour, minuteAndSecond] = timeStamp
+            .replace('"', "")
+            .slice(1, timeStamp.length - 2)
+            .split(":");
+          let [minute, second] = minuteAndSecond.split(".");
+
+          result.push({
+            hour: hour,
+            minute: minute,
+            second: second,
+            sentence: sentence,
+          });
+        }
+        return result;
+      }
+    </script>
+  </body>
+</html>

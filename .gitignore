@@ -1,0 +1,8 @@
+.env
+NOTES.md
+tailwind.*
+updates.db
+dumps/*
+fileBucket/*
+testAudio/*
+*.txt
