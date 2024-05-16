@@ -1,6 +1,8 @@
 #!/bin/bash
 
 set -xe
+mkdir fileBucket
+nim r --hints:off db_utils.nim
 
 pip install azure-storage-blob
 pip install gradio_client
